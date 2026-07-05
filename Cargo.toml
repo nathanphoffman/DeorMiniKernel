@@ -1,10 +1,12 @@
 [package]
-name = "mini_kernel"
+name = "DeorMiniKernel"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
+name = "deor_mini_kernel"
 crate-type = ["staticlib"]
+path = "src/lib.rs"
 
 [profile.dev]
 panic = "abort"
