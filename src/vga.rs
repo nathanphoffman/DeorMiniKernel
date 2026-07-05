@@ -1,5 +1,7 @@
 use core::fmt;
 
+use crate::interrupts::outb;
+
 const VGA_BUFFER: *mut u8 = 0xb8000 as *mut u8;
 const VGA_WIDTH: usize = 80;
 const VGA_HEIGHT: usize = 25;
@@ -31,6 +33,21 @@ fn set_cursor(col: usize, row: usize) {
         core::ptr::write_volatile(core::ptr::addr_of_mut!(CURSOR_COL), col);
         core::ptr::write_volatile(core::ptr::addr_of_mut!(CURSOR_ROW), row);
     }
+    move_hardware_cursor(col, row);
+}
+
+// Tells the CRT controller where to blink the cursor. CURSOR_COL/CURSOR_ROW
+// alone only steer where `putc` writes into the framebuffer -- the visible
+// hardware cursor is a separate piece of VGA state driven by these two
+// index/data ports, and is otherwise left wherever the BIOS/bootloader put it.
+fn move_hardware_cursor(col: usize, row: usize) {
+    let pos = (row * VGA_WIDTH + col) as u16;
+    unsafe {
+        outb(0x3D4, 0x0F);
+        outb(0x3D5, (pos & 0xFF) as u8);
+        outb(0x3D4, 0x0E);
+        outb(0x3D5, ((pos >> 8) & 0xFF) as u8);
+    }
 }
 
 fn put_at(col: usize, row: usize, byte: u8) {
@@ -60,22 +77,41 @@ fn new_line() {
     let (_, mut row) = cursor();
     row += 1;
     if row >= VGA_HEIGHT {
-        row = 0;
+        scroll_up();
+        row = VGA_HEIGHT - 1;
     }
     set_cursor(0, row);
 }
 
-fn backspace() {
-    let (mut col, mut row) = cursor();
-    if col == 0 {
-        if row == 0 {
-            return;
+// Shifts every row up by one and blanks the last row, like a real terminal
+// scrolling instead of wrapping back to the top and overwriting old text.
+fn scroll_up() {
+    for row in 1..VGA_HEIGHT {
+        for col in 0..VGA_WIDTH {
+            let src = (row * VGA_WIDTH + col) * 2;
+            let dst = ((row - 1) * VGA_WIDTH + col) * 2;
+            unsafe {
+                let byte = VGA_BUFFER.add(src).read_volatile();
+                let color = VGA_BUFFER.add(src + 1).read_volatile();
+                VGA_BUFFER.add(dst).write_volatile(byte);
+                VGA_BUFFER.add(dst + 1).write_volatile(color);
+            }
         }
-        row -= 1;
-        col = VGA_WIDTH - 1;
-    } else {
-        col -= 1;
     }
+    for col in 0..VGA_WIDTH {
+        put_at(col, VGA_HEIGHT - 1, b' ');
+    }
+}
+
+// Never crosses into the row above -- a user can only erase back to the
+// start of the screen line they're currently on, not into previously
+// printed lines above it.
+fn backspace() {
+    let (col, row) = cursor();
+    if col == 0 {
+        return;
+    }
+    let col = col - 1;
     set_cursor(col, row);
     put_at(col, row, b' ');
 }

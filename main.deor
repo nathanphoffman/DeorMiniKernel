@@ -1,7 +1,40 @@
 import "lib/keyboard.deor"
+import "lib/screen.deor"
+import "lib/string.deor"
+
+shape listString = list of string
+
+struct Input
+	string first
+	string second
+	string third
+	listString input_list
+
+# regular deor input is not supported so this is a wrapper 
+fn Input _input()
+	output as read_line()
+	input_list as s_split_whitespace(output)
+	input_length as len(input_list)
+
+	first as ""
+	second as ""
+	third as ""
+
+	if input_length > 0
+		first = input_list at 1
+	if input_length > 1
+		second = input_list at 2
+	if input_length > 2
+		third = input_list at 3
+
+	return (first, second, third, input_list)
+
 
 fn void main()
-	print("Hello, world!")
-	print("What is your name?")
-	string name = read_line()
-	print(name)
+	if true
+		print("What is your name?")
+		(first) in _input()
+		clear()
+		print("your name is")
+		print(first)
+		

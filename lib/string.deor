@@ -63,3 +63,7 @@ fn string s_trim_start(string str)
 fn string s_trim_end(string str)
 	rust
 		str.trim_end().to_string()
+
+fn stringList s_split_whitespace(string str)
+	rust
+		str.split_whitespace().collect()
