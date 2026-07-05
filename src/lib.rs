@@ -5,12 +5,13 @@ extern crate alloc;
 use core::panic::PanicInfo;
 
 pub mod heap;
+pub mod interrupts;
 pub mod vga;
 
 mod generated {
     include!("../build/main_body.rs");
     use crate::println;
-    use alloc::string::ToString;
+    use alloc::string::{String, ToString};
 
     pub fn run() {
         main();
@@ -20,6 +21,7 @@ mod generated {
 #[no_mangle]
 pub extern "C" fn kernel_main() -> ! {
     vga::clear_screen();
+    interrupts::init();
     generated::run();
 
     loop {

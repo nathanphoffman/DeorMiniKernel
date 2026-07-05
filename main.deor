@@ -1,3 +1,7 @@
+import "lib/keyboard.deor"
 
 fn void main()
 	print("Hello, world!")
+	print("What is your name?")
+	string name = read_line()
+	print(name)

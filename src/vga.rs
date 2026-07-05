@@ -34,6 +34,35 @@ impl Writer {
             self.row = 0;
         }
     }
+
+    fn backspace(&mut self) {
+        if self.col == 0 {
+            if self.row == 0 {
+                return;
+            }
+            self.row -= 1;
+            self.col = VGA_WIDTH - 1;
+        } else {
+            self.col -= 1;
+        }
+        let offset = (self.row * VGA_WIDTH + self.col) * 2;
+        unsafe {
+            VGA_BUFFER.add(offset).write_volatile(b' ');
+            VGA_BUFFER.add(offset + 1).write_volatile(COLOR_WHITE_ON_BLACK);
+        }
+    }
+}
+
+/// Writes a single byte typed at the keyboard directly to the screen,
+/// bypassing `core::fmt` -- kept simple since this runs inside an interrupt handler.
+pub fn putc(byte: u8) {
+    unsafe {
+        match byte {
+            b'\n' => WRITER.new_line(),
+            0x08 => WRITER.backspace(),
+            _ => WRITER.write_byte(byte),
+        }
+    }
 }
 
 impl fmt::Write for Writer {

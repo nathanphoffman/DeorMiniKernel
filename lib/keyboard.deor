@@ -1,0 +1,3 @@
+fn string read_line()
+	rust
+		crate::interrupts::read_line()
