@@ -11,6 +11,32 @@ extern "C" {
     fn keyboard_isr_stub();
 }
 
+// LINE_BUF/LINE_LEN/LINE_READY are written from keyboard_isr_rust, which the
+// compiler can't see is ever called -- it's only reached via a hardware
+// interrupt, invisible to normal call-graph analysis. Without volatile
+// access, LLVM is free to cache or reorder reads of these statics inside
+// read_line() as if nothing else could touch them, which loses keystrokes
+// under real timing. Every access from either side must go through here.
+unsafe fn line_ready() -> bool {
+    core::ptr::read_volatile(core::ptr::addr_of!(LINE_READY))
+}
+
+unsafe fn set_line_ready(value: bool) {
+    core::ptr::write_volatile(core::ptr::addr_of_mut!(LINE_READY), value)
+}
+
+unsafe fn line_len() -> usize {
+    core::ptr::read_volatile(core::ptr::addr_of!(LINE_LEN))
+}
+
+unsafe fn set_line_len(value: usize) {
+    core::ptr::write_volatile(core::ptr::addr_of_mut!(LINE_LEN), value)
+}
+
+unsafe fn set_line_buf(index: usize, byte: u8) {
+    core::ptr::write_volatile(core::ptr::addr_of_mut!(LINE_BUF[index]), byte)
+}
+
 /// Registers the keyboard ISR at IRQ1's vector (0x21 after the PIC remap).
 pub(crate) fn install() {
     set_idt_entry(0x21, keyboard_isr_stub as *const () as u32);
@@ -49,19 +75,21 @@ pub extern "C" fn keyboard_isr_rust() {
         unsafe {
             match c {
                 b'\n' => {
-                    LINE_READY = true;
+                    set_line_ready(true);
                     crate::vga::putc(b'\n');
                 }
                 0x08 => {
-                    if LINE_LEN > 0 {
-                        LINE_LEN -= 1;
+                    let len = line_len();
+                    if len > 0 {
+                        set_line_len(len - 1);
                         crate::vga::putc(0x08);
                     }
                 }
                 _ => {
-                    if LINE_LEN < LINE_BUF_SIZE {
-                        LINE_BUF[LINE_LEN] = c;
-                        LINE_LEN += 1;
+                    let len = line_len();
+                    if len < LINE_BUF_SIZE {
+                        set_line_buf(len, c);
+                        set_line_len(len + 1);
                         crate::vga::putc(c);
                     }
                 }
@@ -74,18 +102,19 @@ pub extern "C" fn keyboard_isr_rust() {
 pub fn read_line() -> String {
     unsafe {
         core::arch::asm!("cli");
-        LINE_READY = false;
-        LINE_LEN = 0;
+        set_line_ready(false);
+        set_line_len(0);
         core::arch::asm!("sti");
     }
 
     loop {
-        if unsafe { LINE_READY } {
+        if unsafe { line_ready() } {
             break;
         }
         unsafe { core::arch::asm!("hlt") };
     }
 
-    let s = unsafe { core::str::from_utf8(&LINE_BUF[..LINE_LEN]).unwrap_or("") };
+    let len = unsafe { line_len() };
+    let s = unsafe { core::str::from_utf8(&LINE_BUF[..len]).unwrap_or("") };
     s.to_string()
 }

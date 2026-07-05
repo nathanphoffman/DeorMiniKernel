@@ -5,76 +5,90 @@ const VGA_WIDTH: usize = 80;
 const VGA_HEIGHT: usize = 25;
 const COLOR_WHITE_ON_BLACK: u8 = 0x0f;
 
-pub struct Writer {
-    col: usize,
-    row: usize,
+// Cursor position is shared between ordinary code and `putc`, which is also
+// called from the keyboard interrupt handler. A `static mut Writer` accessed
+// through `&mut` looks safe here since everything runs on one core, but
+// nothing in a normal call graph reaches keyboard_isr_rust -- it's only
+// invoked via a hardware interrupt -- so the compiler is free to assume the
+// `&mut` it hands out is never aliased and cache or reorder around it. Raw
+// volatile reads/writes to plain statics sidestep that: no `&mut` to a
+// static is ever created, so there's nothing for the optimizer to assume
+// exclusivity over.
+static mut CURSOR_COL: usize = 0;
+static mut CURSOR_ROW: usize = 0;
+
+fn cursor() -> (usize, usize) {
+    unsafe {
+        (
+            core::ptr::read_volatile(core::ptr::addr_of!(CURSOR_COL)),
+            core::ptr::read_volatile(core::ptr::addr_of!(CURSOR_ROW)),
+        )
+    }
 }
 
-impl Writer {
-    fn write_byte(&mut self, byte: u8) {
-        if byte == b'\n' {
-            self.new_line();
+fn set_cursor(col: usize, row: usize) {
+    unsafe {
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(CURSOR_COL), col);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!(CURSOR_ROW), row);
+    }
+}
+
+fn put_at(col: usize, row: usize, byte: u8) {
+    let offset = (row * VGA_WIDTH + col) * 2;
+    unsafe {
+        VGA_BUFFER.add(offset).write_volatile(byte);
+        VGA_BUFFER.add(offset + 1).write_volatile(COLOR_WHITE_ON_BLACK);
+    }
+}
+
+fn write_byte(byte: u8) {
+    if byte == b'\n' {
+        new_line();
+        return;
+    }
+    let (mut col, _) = cursor();
+    if col >= VGA_WIDTH {
+        new_line();
+        col = 0;
+    }
+    let (_, row) = cursor();
+    put_at(col, row, byte);
+    set_cursor(col + 1, row);
+}
+
+fn new_line() {
+    let (_, mut row) = cursor();
+    row += 1;
+    if row >= VGA_HEIGHT {
+        row = 0;
+    }
+    set_cursor(0, row);
+}
+
+fn backspace() {
+    let (mut col, mut row) = cursor();
+    if col == 0 {
+        if row == 0 {
             return;
         }
-        if self.col >= VGA_WIDTH {
-            self.new_line();
-        }
-        let offset = (self.row * VGA_WIDTH + self.col) * 2;
-        unsafe {
-            VGA_BUFFER.add(offset).write_volatile(byte);
-            VGA_BUFFER.add(offset + 1).write_volatile(COLOR_WHITE_ON_BLACK);
-        }
-        self.col += 1;
+        row -= 1;
+        col = VGA_WIDTH - 1;
+    } else {
+        col -= 1;
     }
-
-    fn new_line(&mut self) {
-        self.col = 0;
-        self.row += 1;
-        if self.row >= VGA_HEIGHT {
-            self.row = 0;
-        }
-    }
-
-    fn backspace(&mut self) {
-        if self.col == 0 {
-            if self.row == 0 {
-                return;
-            }
-            self.row -= 1;
-            self.col = VGA_WIDTH - 1;
-        } else {
-            self.col -= 1;
-        }
-        let offset = (self.row * VGA_WIDTH + self.col) * 2;
-        unsafe {
-            VGA_BUFFER.add(offset).write_volatile(b' ');
-            VGA_BUFFER.add(offset + 1).write_volatile(COLOR_WHITE_ON_BLACK);
-        }
-    }
+    set_cursor(col, row);
+    put_at(col, row, b' ');
 }
 
 /// Writes a single byte typed at the keyboard directly to the screen,
 /// bypassing `core::fmt` -- kept simple since this runs inside an interrupt handler.
 pub fn putc(byte: u8) {
-    unsafe {
-        match byte {
-            b'\n' => WRITER.new_line(),
-            0x08 => WRITER.backspace(),
-            _ => WRITER.write_byte(byte),
-        }
+    match byte {
+        b'\n' => new_line(),
+        0x08 => backspace(),
+        _ => write_byte(byte),
     }
 }
-
-impl fmt::Write for Writer {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for byte in s.bytes() {
-            self.write_byte(byte);
-        }
-        Ok(())
-    }
-}
-
-pub static mut WRITER: Writer = Writer { col: 0, row: 0 };
 
 pub fn clear_screen() {
     for i in 0..VGA_WIDTH * VGA_HEIGHT {
@@ -83,14 +97,24 @@ pub fn clear_screen() {
             VGA_BUFFER.add(i * 2 + 1).write_volatile(COLOR_WHITE_ON_BLACK);
         }
     }
+    set_cursor(0, 0);
+}
+
+struct ScreenWriter;
+
+impl fmt::Write for ScreenWriter {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        for byte in s.bytes() {
+            write_byte(byte);
+        }
+        Ok(())
+    }
 }
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use fmt::Write;
-    unsafe {
-        let _ = WRITER.write_fmt(args);
-    }
+    let _ = ScreenWriter.write_fmt(args);
 }
 
 #[macro_export]
