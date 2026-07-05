@@ -21,17 +21,16 @@ fn Input _input()
 	third as ""
 
 	if input_length > 0
-		first = input_list at 1
+		first = input_list at 0
 	if input_length > 1
-		second = input_list at 2
+		second = input_list at 1
 	if input_length > 2
-		third = input_list at 3
+		third = input_list at 2
 
 	return (first, second, third, input_list)
 
-
 fn void main()
-	if true
+	for if true
 		print("What is your name?")
 		(first) in _input()
 		clear()

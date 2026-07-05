@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(warnings)]
 
 extern crate alloc;
 
@@ -13,6 +14,7 @@ mod generated {
     include!("../build/main_body.rs");
     use crate::println;
     use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
 
     pub fn run() {
         main();

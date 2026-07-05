@@ -66,4 +66,4 @@ fn string s_trim_end(string str)
 
 fn stringList s_split_whitespace(string str)
 	rust
-		str.split_whitespace().collect()
+		str.split_whitespace().map(|s| s.to_string()).collect()
