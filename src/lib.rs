@@ -6,6 +6,7 @@ use core::panic::PanicInfo;
 
 pub mod heap;
 pub mod interrupts;
+pub mod keyboard;
 pub mod vga;
 
 mod generated {
