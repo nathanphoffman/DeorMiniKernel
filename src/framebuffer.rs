@@ -1,14 +1,19 @@
 use core::fmt;
 
-use crate::font8x8::FONT8X8;
+use crate::font9x16::FONT9X16;
 use crate::multiboot2::FramebufferInfo;
 
-const GLYPH_SIZE: usize = 8;
-// Each source font pixel is drawn as a SCALE x SCALE block, so on-screen
-// glyphs are CELL_SIZE x CELL_SIZE -- the raw 8x8 font is illegibly small
-// on a real framebuffer at typical resolutions.
-const SCALE: usize = 2;
-const CELL_SIZE: usize = GLYPH_SIZE * SCALE;
+const GLYPH_WIDTH: usize = 9;
+const GLYPH_HEIGHT: usize = 16;
+// Scale is a ratio (SCALE_NUM / SCALE_DEN) rather than a float -- this is
+// freestanding code with no FPU/SSE state set up at boot (see boot.asm), so
+// an f32 here would risk hitting an unhandled #UD/#NM fault. 3/2 = 1.5x.
+// Each destination pixel samples its nearest source pixel (nearest-neighbor
+// scaling), so any ratio works, not just whole numbers.
+const SCALE_NUM: usize = 1;
+const SCALE_DEN: usize = 1;
+const CELL_WIDTH: usize = (GLYPH_WIDTH * SCALE_NUM) / SCALE_DEN;
+const CELL_HEIGHT: usize = (GLYPH_HEIGHT * SCALE_NUM) / SCALE_DEN;
 const FG: (u8, u8, u8) = (0xFF, 0xFF, 0xFF);
 const BG: (u8, u8, u8) = (0x00, 0x00, 0x00);
 
@@ -52,11 +57,11 @@ pub fn init(mb_info_ptr: *const u8) {
         );
         core::ptr::write_volatile(
             core::ptr::addr_of_mut!(FB_COLS),
-            info.width as usize / CELL_SIZE,
+            info.width as usize / CELL_WIDTH,
         );
         core::ptr::write_volatile(
             core::ptr::addr_of_mut!(FB_ROWS),
-            info.height as usize / CELL_SIZE,
+            info.height as usize / CELL_HEIGHT,
         );
         core::ptr::write_volatile(core::ptr::addr_of_mut!(RED_POS), info.red_pos);
         core::ptr::write_volatile(core::ptr::addr_of_mut!(RED_SIZE), info.red_size);
@@ -129,24 +134,19 @@ fn put_pixel(x: usize, y: usize, color: u32) {
 }
 
 fn draw_glyph(col: usize, row: usize, byte: u8) {
-    let glyph = if byte < 128 {
-        &FONT8X8[byte as usize]
-    } else {
-        &FONT8X8[b'?' as usize]
-    };
+    let glyph = &FONT9X16[byte as usize];
     let fg = pack_color(FG);
     let bg = pack_color(BG);
-    let base_x = col * CELL_SIZE;
-    let base_y = row * CELL_SIZE;
-    for (dy, bits) in glyph.iter().enumerate() {
-        for dx in 0..GLYPH_SIZE {
-            let set = (bits >> dx) & 1 != 0;
+    let base_x = col * CELL_WIDTH;
+    let base_y = row * CELL_HEIGHT;
+    for dy in 0..CELL_HEIGHT {
+        let src_y = (dy * SCALE_DEN) / SCALE_NUM;
+        let bits = glyph[src_y];
+        for dx in 0..CELL_WIDTH {
+            let src_x = (dx * SCALE_DEN) / SCALE_NUM;
+            let set = (bits >> src_x) & 1 != 0;
             let color = if set { fg } else { bg };
-            for sy in 0..SCALE {
-                for sx in 0..SCALE {
-                    put_pixel(base_x + dx * SCALE + sx, base_y + dy * SCALE + sy, color);
-                }
-            }
+            put_pixel(base_x + dx, base_y + dy, color);
         }
     }
 }
@@ -183,8 +183,8 @@ fn new_line() {
 // scrolling instead of wrapping back to the top and overwriting old text.
 fn scroll_up() {
     let (fb_addr, pitch, _, _, rows) = geometry();
-    let row_bytes = pitch * CELL_SIZE;
-    let total_bytes = pitch * rows * CELL_SIZE;
+    let row_bytes = pitch * CELL_HEIGHT;
+    let total_bytes = pitch * rows * CELL_HEIGHT;
     unsafe {
         let base = fb_addr as *mut u8;
         core::ptr::copy(base.add(row_bytes), base, total_bytes - row_bytes);
@@ -219,7 +219,7 @@ pub fn clear_screen() {
     let (_, pitch, _, _, rows) = geometry();
     let (fb_addr, _, _, _, _) = geometry();
     unsafe {
-        core::ptr::write_bytes(fb_addr as *mut u8, 0, pitch * rows * CELL_SIZE);
+        core::ptr::write_bytes(fb_addr as *mut u8, 0, pitch * rows * CELL_HEIGHT);
     }
     set_cursor(0, 0);
 }

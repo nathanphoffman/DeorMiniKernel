@@ -5,7 +5,7 @@ extern crate alloc;
 
 use core::panic::PanicInfo;
 
-pub mod font8x8;
+pub mod font9x16;
 pub mod framebuffer;
 pub mod heap;
 pub mod interrupts;
