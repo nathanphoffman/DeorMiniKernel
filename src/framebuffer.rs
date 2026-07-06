@@ -10,7 +10,7 @@ const GLYPH_HEIGHT: usize = 16;
 // an f32 here would risk hitting an unhandled #UD/#NM fault. 3/2 = 1.5x.
 // Each destination pixel samples its nearest source pixel (nearest-neighbor
 // scaling), so any ratio works, not just whole numbers.
-const SCALE_NUM: usize = 1;
+const SCALE_NUM: usize = 2;
 const SCALE_DEN: usize = 1;
 const CELL_WIDTH: usize = (GLYPH_WIDTH * SCALE_NUM) / SCALE_DEN;
 const CELL_HEIGHT: usize = (GLYPH_HEIGHT * SCALE_NUM) / SCALE_DEN;
