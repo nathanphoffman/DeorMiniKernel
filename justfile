@@ -1,4 +1,5 @@
 run: build
+    ./build.sh
     ./run.sh
 
 build:

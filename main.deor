@@ -33,7 +33,6 @@ fn void main()
 	for if true
 		print("What is your name?")
 		(first) in _input()
-		clear()
-		print("your name is")
-		print(first)
+		print("Bad response")
+		#print(first)
 		

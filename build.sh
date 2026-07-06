@@ -24,3 +24,22 @@ ld -m elf_i386 -T linker.ld -o kernel.elf \
     target/i686-mini_kernel/release/libdeor_mini_kernel.a
 
 echo "Built kernel.elf"
+
+# Package into a GRUB ISO so the kernel boots the same way (multiboot2 +
+# GRUB) whether GRUB itself started under legacy BIOS or UEFI -- QEMU's
+# `-kernel` flag only understands Multiboot1, so it can't load this directly.
+mkdir -p build/isodir/boot/grub
+cp kernel.elf build/isodir/boot/kernel.elf
+cat > build/isodir/boot/grub/grub.cfg <<'GRUBCFG'
+set timeout=0
+insmod all_video
+insmod efi_gop
+insmod video_bochs
+menuentry "MiniKernel" {
+    multiboot2 /boot/kernel.elf
+    boot
+}
+GRUBCFG
+
+grub-mkrescue -o minikernel.iso build/isodir
+echo "Built minikernel.iso"

@@ -76,13 +76,13 @@ pub extern "C" fn keyboard_isr_rust() {
             match c {
                 b'\n' => {
                     set_line_ready(true);
-                    crate::vga::putc(b'\n');
+                    crate::framebuffer::putc(b'\n');
                 }
                 0x08 => {
                     let len = line_len();
                     if len > 0 {
                         set_line_len(len - 1);
-                        crate::vga::putc(0x08);
+                        crate::framebuffer::putc(0x08);
                     }
                 }
                 _ => {
@@ -90,7 +90,7 @@ pub extern "C" fn keyboard_isr_rust() {
                     if len < LINE_BUF_SIZE {
                         set_line_buf(len, c);
                         set_line_len(len + 1);
-                        crate::vga::putc(c);
+                        crate::framebuffer::putc(c);
                     }
                 }
             }

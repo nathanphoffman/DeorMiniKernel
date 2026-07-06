@@ -1,20 +1,40 @@
-; Minimal Multiboot header + entry stub.
-; QEMU's -kernel flag loads Multiboot-compliant ELF binaries directly
-; (no GRUB/bootloader needed) and hands control to us in 32-bit protected mode.
+; Multiboot2 header + entry stub.
+; GRUB (via grub-mkrescue) loads this ELF and hands control to us in 32-bit
+; protected mode, with a pointer to the boot information structure in ebx --
+; that structure carries the linear framebuffer address/pitch/depth GRUB set
+; up from either VBE (BIOS) or GOP (UEFI), so the same kernel image renders
+; the same way regardless of which firmware actually booted GRUB.
 
 bits 32
 
-MBALIGN     equ  1 << 0
-MEMINFO     equ  1 << 1
-FLAGS       equ  MBALIGN | MEMINFO
-MAGIC       equ  0x1BADB002
-CHECKSUM    equ -(MAGIC + FLAGS)
+MB2_MAGIC        equ 0xe85250d6
+MB2_ARCH_I386    equ 0
 
 section .multiboot
-align 4
-    dd MAGIC
-    dd FLAGS
-    dd CHECKSUM
+align 8
+mb2_header_start:
+    dd MB2_MAGIC
+    dd MB2_ARCH_I386
+    dd mb2_header_end - mb2_header_start
+    dd -(MB2_MAGIC + MB2_ARCH_I386 + (mb2_header_end - mb2_header_start))
+
+    ; Framebuffer request tag: ask for a 1024x768x32 linear framebuffer.
+    ; GRUB may hand back a different mode if that exact one isn't available,
+    ; so the kernel reads back whatever it actually got rather than assuming.
+    align 8
+    dw 5                                    ; MULTIBOOT_HEADER_TAG_FRAMEBUFFER
+    dw 0                                    ; flags
+    dd 20                                   ; size (8-byte tag header + 3 fields)
+    dd 1024                                 ; width
+    dd 768                                  ; height
+    dd 32                                   ; depth
+
+    ; End tag
+    align 8
+    dw 0
+    dw 0
+    dd 8
+mb2_header_end:
 
 ; The Multiboot spec doesn't guarantee a specific code/data selector, so we
 ; load our own GDT with known selector values -- the IDT (set up later, in
@@ -57,6 +77,8 @@ global _start
 extern kernel_main
 _start:
     mov esp, stack_top
+    ; ebx holds GRUB's pointer to the multiboot2 boot info structure; none of
+    ; lgdt/jmp/segment reloads below touch it, so it survives to the call.
     lgdt [gdt_descriptor]
     jmp CODE_SEG:.reload_segments
 .reload_segments:
@@ -66,6 +88,7 @@ _start:
     mov fs, ax
     mov gs, ax
     mov ss, ax
+    push ebx
     call kernel_main
 .hang:
     cli

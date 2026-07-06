@@ -5,10 +5,12 @@ extern crate alloc;
 
 use core::panic::PanicInfo;
 
+pub mod font8x8;
+pub mod framebuffer;
 pub mod heap;
 pub mod interrupts;
 pub mod keyboard;
-pub mod vga;
+pub mod multiboot2;
 
 mod generated {
     include!("../build/main_body.rs");
@@ -22,8 +24,8 @@ mod generated {
 }
 
 #[no_mangle]
-pub extern "C" fn kernel_main() -> ! {
-    vga::clear_screen();
+pub extern "C" fn kernel_main(mb_info_ptr: *const u8) -> ! {
+    framebuffer::init(mb_info_ptr);
     interrupts::init();
     generated::run();
 
